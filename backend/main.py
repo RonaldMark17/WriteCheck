@@ -455,7 +455,8 @@ def upload_submission_file(file: UploadFile = File(...)):
     target_path = sub_dir / safe_name
     with open(target_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
-    file_url = f"http://localhost:8000/uploads/submissions/{safe_name}"
+    backend_base = os.getenv("BACKEND_URL", "http://localhost:8000").rstrip("/")
+    file_url = f"{backend_base}/uploads/submissions/{safe_name}"
     return {
         "success": True,
         "file_url": file_url,

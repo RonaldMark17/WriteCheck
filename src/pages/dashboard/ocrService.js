@@ -230,7 +230,8 @@ export async function extractTextFromImage(file, options = {}) {
 
 export async function getOcrEngineInfo() {
   try {
-    const response = await fetch("http://localhost:8000/health");
+    const base = (process.env.REACT_APP_OCR_ENDPOINT || "http://localhost:8000/upload").replace(/\/upload.*$/, "");
+    const response = await fetch(`${base}/health`);
     if (!response.ok) return null;
     return await response.json();
   } catch {
