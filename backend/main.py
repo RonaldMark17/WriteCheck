@@ -443,6 +443,7 @@ os.makedirs(UPLOAD_DIR / "submissions", exist_ok=True)
 # Serve uploaded files with explicit CORS headers.
 # StaticFiles bypasses CORSMiddleware, so we use a custom route instead.
 @app.api_route("/uploads/{file_path:path}", methods=["GET", "HEAD", "OPTIONS"])
+@app.api_route("/api/uploads/{file_path:path}", methods=["GET", "HEAD", "OPTIONS"])
 async def serve_upload(file_path: str):
     full_path = UPLOAD_DIR / file_path
     if not full_path.exists() or not full_path.is_file():
@@ -463,6 +464,7 @@ async def serve_upload(file_path: str):
 
 
 @app.get("/health")
+@app.get("/api/health")
 async def health():
     return {
         "status": "ok",
@@ -783,6 +785,7 @@ def simulate_complete_scan(scan_id: str):
 
 
 @app.post("/upload")
+@app.post("/api/upload")
 def upload_image(file: UploadFile = File(...)):
     started_at = time.perf_counter()
     ocr_input = prepare_ocr_input(file, started_at)
@@ -835,6 +838,7 @@ def upload_image(file: UploadFile = File(...)):
 
 
 @app.post("/upload-stream")
+@app.post("/api/upload-stream")
 def upload_image_stream(file: UploadFile = File(...)):
     started_at = time.perf_counter()
     ocr_input = prepare_ocr_input(file, started_at)
