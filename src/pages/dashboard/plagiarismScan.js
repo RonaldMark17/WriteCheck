@@ -92,7 +92,7 @@ function isImageFile(file) {
   return file?.type?.startsWith("image/");
 }
 
-export async function readTextFromFiles(files = []) {
+export async function readTextFromFiles(files = [], options = {}) {
   const readableFiles = [];
   const unreadableFiles = [];
   const textBlocks = [];
@@ -101,7 +101,13 @@ export async function readTextFromFiles(files = []) {
   for (const file of files) {
     if (isImageFile(file)) {
       const result =
-        await extractTextFromImage(file);
+        await extractTextFromImage(file, {
+          onProgress: (progress) =>
+            options.onImageProgress?.({
+              file,
+              ...progress,
+            }),
+        });
 
       const imageText =
         result.text.trim();
@@ -111,6 +117,10 @@ export async function readTextFromFiles(files = []) {
         name: file.name,
         text: imageText,
         lines: result.lines ?? [],
+        detectedLineCount: result.detectedLineCount,
+        duplicateLineCount: result.duplicateLineCount,
+        processedLineCount: result.processedLineCount,
+        truncated: result.truncated,
       });
 
       if (imageText) {

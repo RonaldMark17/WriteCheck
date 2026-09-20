@@ -6,5 +6,6 @@ transformers
 pillow
 opencv-python
 torch
+safetensors
 tiktoken
 protobuf

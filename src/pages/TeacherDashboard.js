@@ -91,6 +91,9 @@ export default function TeacherDashboard({ profile }) {
   const [manualCheckResult, setManualCheckResult] =
     useState(null);
 
+  const [manualLiveOcrResult, setManualLiveOcrResult] =
+    useState(null);
+
   const [manualCheckError, setManualCheckError] =
     useState("");
 
@@ -432,6 +435,7 @@ export default function TeacherDashboard({ profile }) {
 
     setManualCheckFiles(nextFiles);
     setManualCheckResult(null);
+    setManualLiveOcrResult(null);
     setManualCheckError("");
 
     if (nextFiles.length > 0 && uploadMode === "text") {
@@ -443,6 +447,7 @@ export default function TeacherDashboard({ profile }) {
     event.preventDefault();
     setManualCheckError("");
     setManualCheckResult(null);
+    setManualLiveOcrResult(null);
 
     if (!manualCheckText.trim() && manualCheckFiles.length === 0) {
       setManualCheckError("Add a picture, file, or pasted text before scanning.");
@@ -453,7 +458,19 @@ export default function TeacherDashboard({ profile }) {
 
     try {
       const fileText =
-        await readTextFromFiles(manualCheckFiles);
+        await readTextFromFiles(manualCheckFiles, {
+          onImageProgress: (progress) => {
+            setManualLiveOcrResult({
+              fileName: progress.file?.name || "Image",
+              text: progress.text || "",
+              lines: progress.lines ?? [],
+              detectedLineCount: progress.detectedLineCount ?? 0,
+              duplicateLineCount: progress.duplicateLineCount ?? 0,
+              processedLineCount: progress.processedLineCount ?? 0,
+              truncated: progress.truncated,
+            });
+          },
+        });
 
       const combinedText =
         [manualCheckText, fileText.text]
@@ -487,6 +504,7 @@ export default function TeacherDashboard({ profile }) {
     setManualCheckText("");
     setManualCheckFiles([]);
     setManualCheckResult(null);
+    setManualLiveOcrResult(null);
     setManualCheckError("");
     setUploadMode("");
   };
@@ -504,6 +522,36 @@ export default function TeacherDashboard({ profile }) {
       : manualCheckResult?.tone === "amber"
         ? "text-amber-700 ring-amber-100"
         : "text-emerald-700 ring-emerald-100";
+
+  const manualDetectedText =
+    manualCheckResult?.extractedText?.trim() ?? "";
+
+  const manualLiveOcrText =
+    manualLiveOcrResult?.text?.trim() ?? "";
+
+  const hasManualImageExtraction =
+    (manualCheckResult?.extractedImages?.length ?? 0) > 0;
+
+  const manualImageExtractionSummary =
+    (manualCheckResult?.extractedImages ?? [])
+      .flatMap((image) => {
+        const summaries = [];
+
+        if (image.duplicateLineCount > 0) {
+          summaries.push(
+            `${image.name}: removed ${image.duplicateLineCount} duplicate detected line${image.duplicateLineCount === 1 ? "" : "s"}.`
+          );
+        }
+
+        if (image.truncated) {
+          summaries.push(
+            `${image.name}: showing ${image.processedLineCount} of ${image.detectedLineCount} detected lines for faster OCR.`
+          );
+        }
+
+        return summaries;
+      })
+      .filter(Boolean);
 
   return (
     <div className="min-h-screen bg-[#f4f3ef] text-gray-950">
@@ -1022,6 +1070,7 @@ export default function TeacherDashboard({ profile }) {
                           onClick={() => {
                             setUploadMode(id);
                             setManualCheckResult(null);
+                            setManualLiveOcrResult(null);
                             setManualCheckError("");
                           }}
                           className={
@@ -1149,6 +1198,7 @@ export default function TeacherDashboard({ profile }) {
                           onChange={(event) => {
                             setManualCheckText(event.target.value);
                             setManualCheckResult(null);
+                            setManualLiveOcrResult(null);
                           }}
                           placeholder="Paste essay text, copied paragraphs, or OCR output here."
                           className="mt-2 flex-1 min-h-[360px] w-full rounded-lg border border-gray-300 bg-white px-4 py-4 text-sm font-semibold leading-6 outline-none transition placeholder:text-gray-400 focus:border-emerald-600 focus:ring-4 focus:ring-emerald-100"
@@ -1180,7 +1230,9 @@ export default function TeacherDashboard({ profile }) {
                         Detection result
                       </p>
                       <h3 className="mt-2 text-2xl font-black">
-                        {manualCheckResult?.title || "Ready to scan"}
+                        {isScanningManualCheck
+                          ? "Scanning submission"
+                          : manualCheckResult?.title || "Ready to scan"}
                       </h3>
                     </div>
 
@@ -1191,8 +1243,54 @@ export default function TeacherDashboard({ profile }) {
                     )}
                   </div>
 
-                  {manualCheckResult ? (
+                  {isScanningManualCheck ? (
+                    <div className="mt-8 rounded-lg border border-emerald-100 bg-emerald-50 px-5 py-5">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <p className="text-sm font-extrabold text-emerald-800">
+                            Detecting text...
+                          </p>
+                          <p className="mt-2 text-sm font-semibold leading-6 text-emerald-900">
+                            YOLO has detected the line crops. TrOCR text appears here as each batch finishes.
+                          </p>
+                        </div>
+
+                        {manualLiveOcrResult && (
+                          <span className="rounded-lg bg-white px-3 py-2 text-xs font-black text-emerald-800">
+                            {manualLiveOcrResult.processedLineCount}/{manualLiveOcrResult.detectedLineCount} lines
+                          </span>
+                        )}
+                      </div>
+
+                      <pre className="mt-4 max-h-[320px] overflow-auto whitespace-pre-wrap rounded-lg border border-emerald-100 bg-white px-4 py-3 text-sm font-semibold leading-6 text-gray-800">
+                        {manualLiveOcrText || "Waiting for the first recognized line..."}
+                      </pre>
+                    </div>
+                  ) : manualCheckResult ? (
                     <>
+                      {hasManualImageExtraction && (
+                        <div className="mt-7">
+                          <p className="text-sm font-extrabold text-gray-800">
+                            Detected text
+                          </p>
+                          {manualImageExtractionSummary.length > 0 && (
+                            <div className="mt-3 space-y-2">
+                              {manualImageExtractionSummary.map((summary) => (
+                                <p
+                                  key={summary}
+                                  className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800"
+                                >
+                                  {summary}
+                                </p>
+                              ))}
+                            </div>
+                          )}
+                          <pre className="mt-3 max-h-[320px] overflow-auto whitespace-pre-wrap rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-semibold leading-6 text-gray-800">
+                            {manualDetectedText || "No text was detected from the uploaded image."}
+                          </pre>
+                        </div>
+                      )}
+
                       <div className="mt-7 grid gap-4 sm:grid-cols-[160px_1fr]">
                         <div className={`grid aspect-square place-items-center rounded-lg bg-white text-center ring-8 ${manualResultRingClass}`}>
                           <div>
@@ -1247,17 +1345,6 @@ export default function TeacherDashboard({ profile }) {
                       <p className="mt-6 text-sm font-semibold leading-6 text-gray-600">
                         {manualCheckResult.summary}
                       </p>
-
-                      {manualCheckResult.extractedText && (
-                        <div className="mt-6">
-                          <p className="text-sm font-extrabold text-gray-800">
-                            Extracted text
-                          </p>
-                          <pre className="mt-3 max-h-[260px] overflow-auto whitespace-pre-wrap rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-semibold leading-6 text-gray-700">
-                            {manualCheckResult.extractedText}
-                          </pre>
-                        </div>
-                      )}
 
                       <div className="mt-6">
                         <p className="text-sm font-extrabold text-gray-800">
@@ -1367,6 +1454,3 @@ export default function TeacherDashboard({ profile }) {
     </div>
   );
 }
-
-
-

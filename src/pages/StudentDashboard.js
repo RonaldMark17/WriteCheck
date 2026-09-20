@@ -58,6 +58,24 @@ function sanitizeFileName(value) {
   return cleanValue || "essay-submission";
 }
 
+function getSubmissionBlockMessage(draft, file) {
+  if (!draft.mode) {
+    return "Choose Picture, File, or Paste first.";
+  }
+
+  if (draft.mode === "text" && !draft.text.trim()) {
+    return "Paste your essay text before submitting.";
+  }
+
+  if ((draft.mode === "picture" || draft.mode === "file") && !file) {
+    return draft.mode === "picture"
+      ? "Choose an image before submitting."
+      : "Choose a file before submitting.";
+  }
+
+  return "";
+}
+
 export default function StudentDashboard({ profile }) {
   const [activePage, setActivePage] =
     useState("classrooms");
@@ -114,6 +132,12 @@ export default function StudentDashboard({ profile }) {
       ? assignments.filter((assignment) => assignment.classroomId === selectedClassroomId)
       : assignments;
 
+  const resetSubmissionDraft = useCallback(() => {
+    setSubmissionDraft(emptySubmissionDraft);
+    setSubmissionFile(null);
+    setFilePreview("");
+  }, []);
+
   const loadStudentData = useCallback(async () => {
     setIsLoading(true);
     setErrorMessage("");
@@ -121,9 +145,8 @@ export default function StudentDashboard({ profile }) {
     const { data: membershipRows, error: membershipError } =
       await supabase
         .from(MEMBER_TABLE)
-        .select("id, classroom_id, joined_at")
-        .eq("student_id", profile.id)
-        .order("joined_at", { ascending: false });
+        .select("id, classroom_id, student_id")
+        .eq("student_id", profile.id);
 
     if (membershipError) {
       setErrorMessage(membershipError.message);
@@ -139,8 +162,7 @@ export default function StudentDashboard({ profile }) {
       setAssignments([]);
       setSubmissions([]);
       setSelectedClassroomId("");
-      setSubmissionDraft(emptySubmissionDraft);
-      setSubmissionFile(null);
+      resetSubmissionDraft();
       setIsLoading(false);
       return;
     }
@@ -149,7 +171,8 @@ export default function StudentDashboard({ profile }) {
       await supabase
         .from(CLASSROOM_TABLE)
         .select("id, created_at, teacher_id, classroom_name, classroom_code, subject, section")
-        .in("id", classroomIds);
+        .in("id", classroomIds)
+        .order("created_at", { ascending: false });
 
     if (classroomError) {
       setErrorMessage(classroomError.message);
@@ -293,7 +316,7 @@ export default function StudentDashboard({ profile }) {
           : "",
     }));
     setIsLoading(false);
-  }, [profile.id]);
+  }, [profile.id, resetSubmissionDraft]);
 
   useEffect(() => {
     loadStudentData();
@@ -355,6 +378,28 @@ export default function StudentDashboard({ profile }) {
       return;
     }
 
+    const { data: existingMembership, error: existingMembershipError } =
+      await supabase
+        .from(MEMBER_TABLE)
+        .select("id")
+        .eq("classroom_id", classroom.id)
+        .eq("student_id", profile.id)
+        .maybeSingle();
+
+    if (existingMembershipError) {
+      setErrorMessage(existingMembershipError.message);
+      setIsJoiningClassroom(false);
+      return;
+    }
+
+    if (existingMembership) {
+      setSuccessMessage("You are already in that classroom.");
+      setJoinCode("");
+      setIsJoiningClassroom(false);
+      await loadStudentData();
+      return;
+    }
+
     const { error: membershipError } =
       await supabase
         .from(MEMBER_TABLE)
@@ -385,8 +430,7 @@ export default function StudentDashboard({ profile }) {
 
   const handleViewClassroomAssignments = (classroomId) => {
     setSelectedClassroomId(classroomId);
-    setSubmissionDraft(emptySubmissionDraft);
-    setSubmissionFile(null);
+    resetSubmissionDraft();
     setActivePage("assignments");
   };
 
@@ -402,6 +446,8 @@ export default function StudentDashboard({ profile }) {
   };
 
   const handleSubmissionModeChange = (mode) => {
+    setErrorMessage("");
+    setSuccessMessage("");
     setSubmissionFile(null);
     setSubmissionDraft((currentDraft) => ({
       ...currentDraft,
@@ -495,13 +541,23 @@ export default function StudentDashboard({ profile }) {
           });
 
       if (submissionError) {
+        await supabase
+          .storage
+          .from(ESSAY_BUCKET)
+          .remove([filePath]);
+
+        if (submissionError.code === "23505") {
+          setErrorMessage("You already submitted this assignment.");
+          await loadStudentData();
+          return;
+        }
+
         setErrorMessage(submissionError.message);
         return;
       }
 
       setSuccessMessage("Assignment submitted.");
-      setSubmissionDraft(emptySubmissionDraft);
-      setSubmissionFile(null);
+      resetSubmissionDraft();
       setActivePage("submissions");
       await loadStudentData();
     } catch (error) {
@@ -669,8 +725,7 @@ export default function StudentDashboard({ profile }) {
                     value={selectedClassroomId}
                     onChange={(event) => {
                       setSelectedClassroomId(event.target.value);
-                      setSubmissionDraft(emptySubmissionDraft);
-                      setSubmissionFile(null);
+                      resetSubmissionDraft();
                     }}
                     className="mt-2 h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm font-semibold outline-none transition focus:border-emerald-600 focus:ring-4 focus:ring-emerald-100"
                   >
@@ -700,12 +755,10 @@ export default function StudentDashboard({ profile }) {
                 const isDraftOpen =
                   submissionDraft.assignmentId === assignment.id;
 
-                const isSubmitDisabled =
-                  isSubmittingEssay ||
-                  !submissionDraft.mode ||
-                  (submissionDraft.mode === "text"
-                    ? !submissionDraft.text.trim()
-                    : !submissionFile);
+                const submissionBlockMessage =
+                  isDraftOpen
+                    ? getSubmissionBlockMessage(submissionDraft, submissionFile)
+                    : "";
 
                 return (
                   <article
@@ -757,18 +810,16 @@ export default function StudentDashboard({ profile }) {
                           type="button"
                           onClick={() =>
                             isDraftOpen
-                              ? setSubmissionDraft(emptySubmissionDraft)
+                              ? resetSubmissionDraft()
                               : handleOpenSubmissionDraft(assignment)
                           }
-                                                 
-                        
                           className={
-                              isDraftOpen
-                                ? "inline-flex h-10 items-center justify-center rounded-lg border border-red-200 bg-red-600 px-4 text-sm font-extrabold text-white transition hover:bg-red-700"
-                                : "inline-flex h-10 items-center justify-center rounded-lg border border-gray-200 px-4 text-sm font-extrabold text-gray-700 transition hover:bg-gray-50 hover:text-gray-950"
-                            }   
+                            isDraftOpen
+                              ? "inline-flex h-10 items-center justify-center rounded-lg border border-red-200 bg-red-600 px-4 text-sm font-extrabold text-white transition hover:bg-red-700"
+                              : "inline-flex h-10 items-center justify-center rounded-lg border border-gray-200 px-4 text-sm font-extrabold text-gray-700 transition hover:bg-gray-50 hover:text-gray-950"
+                          }
                         >
-                          {isDraftOpen ? "Close" :"Turn in"}
+                          {isDraftOpen ? "Close" : "Turn in"}
                         </button>
                       )}
                     </div>
@@ -869,7 +920,6 @@ export default function StudentDashboard({ profile }) {
                                     setSubmissionFile(event.target.files?.[0] ?? null)
                                   }
                                   className="sr-only"
-                                  required
                                 />
                               </label>
 
@@ -911,15 +961,29 @@ export default function StudentDashboard({ profile }) {
                                   }))
                                 }
                                 className="mt-2 min-h-[300px] w-full rounded-lg border border-gray-300 bg-white px-4 py-4 text-sm font-semibold leading-6 outline-none transition focus:border-emerald-600 focus:ring-4 focus:ring-emerald-100"
-                                required
                               />
                             </label>
                           )}
                         </div>
 
+                        {(errorMessage || successMessage) && (
+                          <div className="mt-5">
+                            <StatusMessage
+                              error={errorMessage}
+                              message={successMessage}
+                            />
+                          </div>
+                        )}
+
+                        {submissionBlockMessage && (
+                          <p className="mt-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
+                            {submissionBlockMessage}
+                          </p>
+                        )}
+
                         <button
                           type="submit"
-                          disabled={isSubmitDisabled}
+                          disabled={isSubmittingEssay}
                           className="mt-6 inline-flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-emerald-700 px-5 text-base font-extrabold text-white transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:bg-emerald-300"
                         >
                           <UploadIcon className="h-5 w-5" />
@@ -987,6 +1051,3 @@ export default function StudentDashboard({ profile }) {
     </div>
   );
 }
-
-
-
