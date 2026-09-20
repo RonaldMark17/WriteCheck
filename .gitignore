@@ -29,3 +29,5 @@ yarn-error.log*
 /backend/__pycache__/
 /backend/*.log
 /backend/models/
+yolo26x_grayscale_1024_lr0.00075_adam_scale_only_0.1_701515_FINAL_RESULTS/training_results/weights/*.pt
+final_model/*.safetensors
