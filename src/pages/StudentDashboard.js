@@ -28,6 +28,7 @@ import {
   formatFileSize,
   getFileKind,
 } from "./dashboard/plagiarismScan";
+import { getBackendBaseUrl } from "../config/apiConfig";
 
 const submissionModes = [
   {
@@ -298,7 +299,7 @@ export default function StudentDashboard({ profile }) {
 
     let localGradesMap = {};
     try {
-      const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+      const backendUrl = getBackendBaseUrl();
       const res = await fetch(`${backendUrl}/api/submissions/grades`);
       if (res.ok) {
         localGradesMap = await res.json();
@@ -565,7 +566,7 @@ export default function StudentDashboard({ profile }) {
           const formData = new FormData();
           formData.append("file", uploadFile);
 
-          const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+          const backendUrl = getBackendBaseUrl();
           const res = await fetch(`${backendUrl}/api/submissions/upload`, {
             method: "POST",
             body: formData,

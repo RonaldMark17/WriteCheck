@@ -1,4 +1,5 @@
 import { extractTextFromImage } from "./ocrService";
+import { getBackendBaseUrl } from "../../config/apiConfig";
 
 export const ACCEPTED_CHECK_FILE_TYPES =
   "image/png,image/jpeg,image/jpg,image/webp,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,text/markdown,text/csv,application/json,.txt,.md,.csv,.json,.rtf,.pdf,.doc,.docx";
@@ -319,7 +320,7 @@ export function analyzePlagiarismInput({ text = "", files = [] } = {}) {
   };
 }
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+const BACKEND_URL = getBackendBaseUrl();
 
 /**
  * Initiates a plagiarism scan with the backend (Copyleaks service).

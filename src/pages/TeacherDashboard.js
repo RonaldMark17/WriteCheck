@@ -44,6 +44,7 @@ import {
   extractTextFromImage,
   getOcrEngineInfo,
 } from "./dashboard/ocrService";
+import { getBackendBaseUrl } from "../config/apiConfig";
 
 const uploadModes = [
   {
@@ -349,7 +350,7 @@ export default function TeacherDashboard({ profile }) {
 
     let localGradesMap = {};
     try {
-      const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+      const backendUrl = getBackendBaseUrl();
       const res = await fetch(`${backendUrl}/api/submissions/grades`);
       if (res.ok) {
         localGradesMap = await res.json();
@@ -995,7 +996,7 @@ export default function TeacherDashboard({ profile }) {
       setReviewScanResult(finalDetectionResult);
 
       try {
-        const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+        const backendUrl = getBackendBaseUrl();
         await fetch(`${backendUrl}/api/submissions/${reviewingSubmission.id}/scan`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1052,7 +1053,7 @@ export default function TeacherDashboard({ profile }) {
 
     // 2. Always persist to backend SQLite grades table
     try {
-      const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+      const backendUrl = getBackendBaseUrl();
       await fetch(`${backendUrl}/api/submissions/${subId}/grade`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

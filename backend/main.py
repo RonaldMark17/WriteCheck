@@ -345,10 +345,29 @@ def prepare_ocr_input(file, started_at):
 
 app = FastAPI()
 
+cors_origins = [
+    "https://writecheck.duckdns.org",
+    "http://writecheck.duckdns.org",
+    "https://writecheck.duckdns.org:8000",
+    "http://writecheck.duckdns.org:8000",
+    "http://localhost:3000",
+    "http://localhost:8000",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:8000",
+]
+
+extra_origins = os.getenv("CORS_ORIGINS", "")
+if extra_origins:
+    for o in extra_origins.split(","):
+        o_clean = o.strip().rstrip("/")
+        if o_clean and o_clean not in cors_origins:
+            cors_origins.append(o_clean)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
+    allow_origins=cors_origins,
+    allow_origin_regex=r"https?://.*duckdns\.org.*",
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
