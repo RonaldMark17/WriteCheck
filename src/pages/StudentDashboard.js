@@ -28,7 +28,6 @@ import {
   formatFileSize,
   getFileKind,
 } from "./dashboard/plagiarismScan";
-import { getBackendBaseUrl, normalizeFileUrl } from "../config/apiConfig";
 
 const submissionModes = [
   {
@@ -299,7 +298,7 @@ export default function StudentDashboard({ profile }) {
 
     let localGradesMap = {};
     try {
-      const backendUrl = getBackendBaseUrl();
+      const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
       const res = await fetch(`${backendUrl}/api/submissions/grades`);
       if (res.ok) {
         localGradesMap = await res.json();
@@ -320,7 +319,7 @@ export default function StudentDashboard({ profile }) {
           assignmentTitle: assignment?.title || "Assignment",
           classroomName: assignment?.classroomName || "Classroom",
           essayTitle: submission.essay_title || "Essay submission",
-          fileUrl: normalizeFileUrl(submission.file_url),
+          fileUrl: submission.file_url,
           status: gradeInfo.status || submission.status || "submitted",
           grade: gradeInfo.grade || submission.grade || "",
           feedback: gradeInfo.feedback || submission.feedback || "",
@@ -566,7 +565,7 @@ export default function StudentDashboard({ profile }) {
           const formData = new FormData();
           formData.append("file", uploadFile);
 
-          const backendUrl = getBackendBaseUrl();
+          const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
           const res = await fetch(`${backendUrl}/api/submissions/upload`, {
             method: "POST",
             body: formData,
@@ -1125,7 +1124,7 @@ export default function StudentDashboard({ profile }) {
                       setStudentCopySuccess(false);
                       setIsStudentImageExpanded(false);
                       setStudentImagePreviewUrl("");
-                      const fileUrl = normalizeFileUrl(submission.fileUrl);
+                      const fileUrl = submission.fileUrl;
                       if (!fileUrl) return;
                       if (/^https?:\/\//i.test(fileUrl)) {
                         setStudentImagePreviewUrl(fileUrl);

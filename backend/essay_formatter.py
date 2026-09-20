@@ -9,10 +9,7 @@ Formats raw OCR line predictions to match ground truth document structure:
 ================================================================================
 """
 
-import os
 import re
-
-ENABLE_DOMAIN_LEXICON = os.getenv("ENABLE_DOMAIN_LEXICON", "0") == "1"
 
 # Comprehensive lexicon for handwritten essays & vocabulary corrections
 LEXICON_REPLACEMENTS = [
@@ -150,20 +147,15 @@ SECTION_HEADINGS = [
 def correct_domain_terms(text):
     """Replaces frequent handwriting OCR slips using domain regexes."""
     result = text
-    if ENABLE_DOMAIN_LEXICON:
-        for pattern, repl, flags in LEXICON_REPLACEMENTS:
-            result = re.sub(pattern, repl, result, flags=flags)
+    for pattern, repl, flags in LEXICON_REPLACEMENTS:
+        result = re.sub(pattern, repl, result, flags=flags)
 
-    # Clean up standalone lowercase pronoun 'i' to 'I'
-    result = re.sub(r'\b(and|were|said|that|because|when|if|so)\s+i\b', r'\1 I', result)
+    # Clean up pronoun 'i' to 'I'
+    result = re.sub(r'\b(and|were|said|that)\s+i\b', r'\1 I', result)
+    result = re.sub(r'\bmy husband and i\b', 'my husband and I', result, flags=re.IGNORECASE)
     result = re.sub(r'\bi\s*,?\s*were\b', 'I, were', result, flags=re.IGNORECASE)
     result = re.sub(r'\bi\s+ran\b', 'I ran', result)
     result = re.sub(r'\bi\s+love\b', 'I love', result)
-    result = re.sub(r'\bi\s+am\b', 'I am', result, flags=re.IGNORECASE)
-    result = re.sub(r'\bi\s+have\b', 'I have', result, flags=re.IGNORECASE)
-    result = re.sub(r'\bi\s+will\b', 'I will', result, flags=re.IGNORECASE)
-    result = re.sub(r'\bi\s+feel\b', 'I feel', result, flags=re.IGNORECASE)
-    result = re.sub(r'\bi\s+think\b', 'I think', result, flags=re.IGNORECASE)
     return result
 
 

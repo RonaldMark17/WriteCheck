@@ -38,7 +38,6 @@ from essay_formatter import (
 DEFAULT_YOLO_PATH = (
     PROJECT_ROOT
     / "yolo26x_grayscale_1024_lr0.00075_adam_scale_only_0.1_701515_FINAL_RESULTS"
-    / "training_results"
     / "weights"
     / "best.pt"
 )

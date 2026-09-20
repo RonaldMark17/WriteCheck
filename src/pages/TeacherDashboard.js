@@ -44,7 +44,6 @@ import {
   extractTextFromImage,
   getOcrEngineInfo,
 } from "./dashboard/ocrService";
-import { getBackendBaseUrl, normalizeFileUrl } from "../config/apiConfig";
 
 const uploadModes = [
   {
@@ -350,7 +349,7 @@ export default function TeacherDashboard({ profile }) {
 
     let localGradesMap = {};
     try {
-      const backendUrl = getBackendBaseUrl();
+      const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
       const res = await fetch(`${backendUrl}/api/submissions/grades`);
       if (res.ok) {
         localGradesMap = await res.json();
@@ -375,7 +374,7 @@ export default function TeacherDashboard({ profile }) {
           assignmentTitle: assignment?.title || "Assignment",
           classroomName: assignment?.classroomName || "Classroom",
           essayTitle: submission.essay_title || "Essay submission",
-          fileUrl: normalizeFileUrl(submission.file_url),
+          fileUrl: submission.file_url,
           status: gradeInfo.status || submission.status || "submitted",
           grade: gradeInfo.grade || submission.grade || "",
           feedback: gradeInfo.feedback || submission.feedback || "",
@@ -818,7 +817,7 @@ export default function TeacherDashboard({ profile }) {
     }
 
     // Load image preview
-    const fileUrl = normalizeFileUrl(submission.fileUrl);
+    const fileUrl = submission.fileUrl;
     if (!fileUrl) return;
     const isImageUrl = /\.(jpe?g|png|webp|gif)$/i.test(fileUrl) ||
       fileUrl.includes("/submissions/") ||
@@ -996,7 +995,7 @@ export default function TeacherDashboard({ profile }) {
       setReviewScanResult(finalDetectionResult);
 
       try {
-        const backendUrl = getBackendBaseUrl();
+        const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
         await fetch(`${backendUrl}/api/submissions/${reviewingSubmission.id}/scan`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1039,7 +1038,7 @@ export default function TeacherDashboard({ profile }) {
 
     // 1. Try Supabase update (if grade column exists)
     try {
-      const { error: subErr } = await supabase
+      await supabase
         .from(SUBMISSION_TABLE)
         .update({
           grade: gradeVal,
@@ -1047,23 +1046,13 @@ export default function TeacherDashboard({ profile }) {
           status: gradeVal ? "graded" : reviewingSubmission.status,
         })
         .eq("id", subId);
-
-      if (subErr) {
-        // Fallback: update status only in case grade/feedback columns don't exist in Supabase yet
-        await supabase
-          .from(SUBMISSION_TABLE)
-          .update({
-            status: gradeVal ? "graded" : reviewingSubmission.status,
-          })
-          .eq("id", subId);
-      }
     } catch (err) {
       console.warn("Supabase grade update notice:", err);
     }
 
     // 2. Always persist to backend SQLite grades table
     try {
-      const backendUrl = getBackendBaseUrl();
+      const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
       await fetch(`${backendUrl}/api/submissions/${subId}/grade`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

@@ -1,7 +1,9 @@
-import { getBackendBaseUrl, getOcrEndpoint, getOcrStreamEndpoint } from "../../config/apiConfig";
+const OCR_ENDPOINT =
+  process.env.REACT_APP_OCR_ENDPOINT || "http://localhost:8000/upload";
 
-const OCR_ENDPOINT = getOcrEndpoint();
-const OCR_STREAM_ENDPOINT = getOcrStreamEndpoint();
+const OCR_STREAM_ENDPOINT =
+  process.env.REACT_APP_OCR_STREAM_ENDPOINT ||
+  OCR_ENDPOINT.replace(/\/upload$/, "/upload-stream");
 
 const OCR_TIMEOUT_MS = 1200000;
 
@@ -228,8 +230,7 @@ export async function extractTextFromImage(file, options = {}) {
 
 export async function getOcrEngineInfo() {
   try {
-    const base = getBackendBaseUrl();
-    const response = await fetch(`${base}/health`);
+    const response = await fetch("http://localhost:8000/health");
     if (!response.ok) return null;
     return await response.json();
   } catch {

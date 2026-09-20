@@ -37,25 +37,20 @@ DEFAULT_YOLO_MODEL_PATH = MODEL_DIR / "yolo" / "best.pt"
 LEGACY_YOLO_MODEL_PATH = BASE_DIR / "best.pt"
 DEFAULT_TROCR_MODEL_PATH = MODEL_DIR / "final_model"
 
-is_cuda = torch.cuda.is_available()
-
 # Configuration matching high-accuracy New folder (19) reference
-# Automatically tunes defaults based on whether running on CUDA GPU or EC2 CPU
 YOLO_CONF = float(os.getenv("YOLO_CONF", "0.25"))
 YOLO_IOU = float(os.getenv("YOLO_IOU", "0.40"))
-YOLO_IMGSZ = int(os.getenv("YOLO_IMGSZ", "1024" if is_cuda else "800"))
+YOLO_IMGSZ = int(os.getenv("YOLO_IMGSZ", "1024"))
 PAD_RATIO_VERT = float(os.getenv("PAD_RATIO_VERT", "0.08"))
 PAD_PX_HORIZ = int(os.getenv("PAD_PX_HORIZ", "6"))
 MAX_OCR_LINES = int(os.getenv("MAX_OCR_LINES", "0"))
-OCR_BATCH_SIZE = max(1, int(os.getenv("OCR_BATCH_SIZE", "8" if is_cuda else "4")))
-# CRITICAL: On CPU (e.g. AWS EC2), num_beams=4 is 4x slower than num_beams=1 with almost identical accuracy
-OCR_NUM_BEAMS = int(os.getenv("OCR_NUM_BEAMS", "4" if is_cuda else "1"))
+OCR_BATCH_SIZE = max(1, int(os.getenv("OCR_BATCH_SIZE", "8")))
+OCR_NUM_BEAMS = int(os.getenv("OCR_NUM_BEAMS", "4"))
 OCR_MAX_NEW_TOKENS = int(os.getenv("OCR_MAX_NEW_TOKENS", "64"))
 OCR_REPETITION_PENALTY = float(os.getenv("OCR_REPETITION_PENALTY", "1.2"))
 OCR_NO_REPEAT_NGRAM_SIZE = int(os.getenv("OCR_NO_REPEAT_NGRAM_SIZE", "3"))
 TORCH_THREADS = max(1, int(os.getenv("TORCH_THREADS", str(os.cpu_count() or 1))))
-# Enable dynamic quantization by default on CPU for faster inference and lower RAM usage
-TROCR_CPU_QUANTIZE = os.getenv("TROCR_CPU_QUANTIZE", "0" if is_cuda else "1") != "0"
+TROCR_CPU_QUANTIZE = os.getenv("TROCR_CPU_QUANTIZE", "0") != "0"
 TROCR_USE_CACHE = os.getenv("TROCR_USE_CACHE", "1") != "0"
 
 torch.set_num_threads(TORCH_THREADS)
@@ -69,10 +64,9 @@ def resolve_yolo_model_path():
         candidates.append(Path(configured_path).expanduser())
 
     candidates.extend([
-        BASE_DIR.parent / "yolo26x_grayscale_1024_lr0.00075_adam_scale_only_0.1_701515_FINAL_RESULTS" / "training_results" / "weights" / "best.pt",
-        BASE_DIR.parent / "yolo26x_grayscale_1024_lr0.00075_adam_scale_only_0.1_701515_FINAL_RESULTS" / "weights" / "best.pt",
         DEFAULT_YOLO_MODEL_PATH,
         LEGACY_YOLO_MODEL_PATH,
+        BASE_DIR.parent / "yolo26x_grayscale_1024_lr0.00075_adam_scale_only_0.1_701515_FINAL_RESULTS" / "weights" / "best.pt",
         BASE_DIR.parent / "weights" / "best.pt",
         BASE_DIR.parent / "best.pt",
     ])
@@ -298,12 +292,9 @@ def prepare_ocr_input(file, started_at):
 
     print(f"[ocr] received={safe_filename} size={image.size}", flush=True)
 
-    img_bgr = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
-    img_gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
-    img_for_yolo = cv2.cvtColor(img_gray, cv2.COLOR_GRAY2BGR)
-
+    img_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
     results = list(yolo_model.predict(
-        source=img_for_yolo,
+        source=img_cv,
         conf=YOLO_CONF,
         iou=YOLO_IOU,
         imgsz=YOLO_IMGSZ,
@@ -354,29 +345,10 @@ def prepare_ocr_input(file, started_at):
 
 app = FastAPI()
 
-cors_origins = [
-    "https://writecheck.duckdns.org",
-    "http://writecheck.duckdns.org",
-    "https://writecheck.duckdns.org:8000",
-    "http://writecheck.duckdns.org:8000",
-    "http://localhost:3000",
-    "http://localhost:8000",
-    "http://127.0.0.1:3000",
-    "http://127.0.0.1:8000",
-]
-
-extra_origins = os.getenv("CORS_ORIGINS", "")
-if extra_origins:
-    for o in extra_origins.split(","):
-        o_clean = o.strip().rstrip("/")
-        if o_clean and o_clean not in cors_origins:
-            cors_origins.append(o_clean)
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins,
-    allow_origin_regex=r"https?://.*duckdns\.org.*",
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -417,15 +389,11 @@ if hasattr(trocr_model, "generation_config") and hasattr(trocr_model.generation_
 
 if device == "cpu" and TROCR_CPU_QUANTIZE:
     print("[ocr] applying CPU dynamic quantization to TrOCR", flush=True)
-    try:
-        trocr_model = torch.ao.quantization.quantize_dynamic(
-            trocr_model,
-            {torch.nn.Linear},
-            dtype=torch.qint8,
-        )
-        print("[ocr] dynamic INT8 quantization applied successfully", flush=True)
-    except Exception as q_err:
-        print(f"[ocr] dynamic quantization skipped ({q_err}), continuing in float32", flush=True)
+    trocr_model = torch.ao.quantization.quantize_dynamic(
+        trocr_model,
+        {torch.nn.Linear},
+        dtype=torch.qint8,
+    )
 
 configure_trocr_kv_cache(trocr_model, TROCR_USE_CACHE)
 
@@ -443,7 +411,6 @@ os.makedirs(UPLOAD_DIR / "submissions", exist_ok=True)
 # Serve uploaded files with explicit CORS headers.
 # StaticFiles bypasses CORSMiddleware, so we use a custom route instead.
 @app.api_route("/uploads/{file_path:path}", methods=["GET", "HEAD", "OPTIONS"])
-@app.api_route("/api/uploads/{file_path:path}", methods=["GET", "HEAD", "OPTIONS"])
 async def serve_upload(file_path: str):
     full_path = UPLOAD_DIR / file_path
     if not full_path.exists() or not full_path.is_file():
@@ -464,7 +431,6 @@ async def serve_upload(file_path: str):
 
 
 @app.get("/health")
-@app.get("/api/health")
 async def health():
     return {
         "status": "ok",
@@ -489,8 +455,7 @@ def upload_submission_file(file: UploadFile = File(...)):
     target_path = sub_dir / safe_name
     with open(target_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
-    backend_base = os.getenv("BACKEND_URL", "http://localhost:8000").rstrip("/")
-    file_url = f"{backend_base}/uploads/submissions/{safe_name}"
+    file_url = f"http://localhost:8000/uploads/submissions/{safe_name}"
     return {
         "success": True,
         "file_url": file_url,
@@ -785,7 +750,6 @@ def simulate_complete_scan(scan_id: str):
 
 
 @app.post("/upload")
-@app.post("/api/upload")
 def upload_image(file: UploadFile = File(...)):
     started_at = time.perf_counter()
     ocr_input = prepare_ocr_input(file, started_at)
@@ -838,7 +802,6 @@ def upload_image(file: UploadFile = File(...)):
 
 
 @app.post("/upload-stream")
-@app.post("/api/upload-stream")
 def upload_image_stream(file: UploadFile = File(...)):
     started_at = time.perf_counter()
     ocr_input = prepare_ocr_input(file, started_at)
