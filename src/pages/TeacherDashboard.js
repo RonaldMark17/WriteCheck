@@ -1039,7 +1039,7 @@ export default function TeacherDashboard({ profile }) {
 
     // 1. Try Supabase update (if grade column exists)
     try {
-      await supabase
+      const { error: subErr } = await supabase
         .from(SUBMISSION_TABLE)
         .update({
           grade: gradeVal,
@@ -1047,6 +1047,16 @@ export default function TeacherDashboard({ profile }) {
           status: gradeVal ? "graded" : reviewingSubmission.status,
         })
         .eq("id", subId);
+
+      if (subErr) {
+        // Fallback: update status only in case grade/feedback columns don't exist in Supabase yet
+        await supabase
+          .from(SUBMISSION_TABLE)
+          .update({
+            status: gradeVal ? "graded" : reviewingSubmission.status,
+          })
+          .eq("id", subId);
+      }
     } catch (err) {
       console.warn("Supabase grade update notice:", err);
     }
