@@ -69,9 +69,10 @@ def resolve_yolo_model_path():
         candidates.append(Path(configured_path).expanduser())
 
     candidates.extend([
+        BASE_DIR.parent / "yolo26x_grayscale_1024_lr0.00075_adam_scale_only_0.1_701515_FINAL_RESULTS" / "training_results" / "weights" / "best.pt",
+        BASE_DIR.parent / "yolo26x_grayscale_1024_lr0.00075_adam_scale_only_0.1_701515_FINAL_RESULTS" / "weights" / "best.pt",
         DEFAULT_YOLO_MODEL_PATH,
         LEGACY_YOLO_MODEL_PATH,
-        BASE_DIR.parent / "yolo26x_grayscale_1024_lr0.00075_adam_scale_only_0.1_701515_FINAL_RESULTS" / "weights" / "best.pt",
         BASE_DIR.parent / "weights" / "best.pt",
         BASE_DIR.parent / "best.pt",
     ])
@@ -297,9 +298,12 @@ def prepare_ocr_input(file, started_at):
 
     print(f"[ocr] received={safe_filename} size={image.size}", flush=True)
 
-    img_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+    img_bgr = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+    img_gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+    img_for_yolo = cv2.cvtColor(img_gray, cv2.COLOR_GRAY2BGR)
+
     results = list(yolo_model.predict(
-        source=img_cv,
+        source=img_for_yolo,
         conf=YOLO_CONF,
         iou=YOLO_IOU,
         imgsz=YOLO_IMGSZ,
