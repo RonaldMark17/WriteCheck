@@ -28,7 +28,7 @@ import {
   formatFileSize,
   getFileKind,
 } from "./dashboard/plagiarismScan";
-import { getBackendBaseUrl } from "../config/apiConfig";
+import { getBackendBaseUrl, normalizeFileUrl } from "../config/apiConfig";
 
 const submissionModes = [
   {
@@ -320,7 +320,7 @@ export default function StudentDashboard({ profile }) {
           assignmentTitle: assignment?.title || "Assignment",
           classroomName: assignment?.classroomName || "Classroom",
           essayTitle: submission.essay_title || "Essay submission",
-          fileUrl: submission.file_url,
+          fileUrl: normalizeFileUrl(submission.file_url),
           status: gradeInfo.status || submission.status || "submitted",
           grade: gradeInfo.grade || submission.grade || "",
           feedback: gradeInfo.feedback || submission.feedback || "",
@@ -1125,7 +1125,7 @@ export default function StudentDashboard({ profile }) {
                       setStudentCopySuccess(false);
                       setIsStudentImageExpanded(false);
                       setStudentImagePreviewUrl("");
-                      const fileUrl = submission.fileUrl;
+                      const fileUrl = normalizeFileUrl(submission.fileUrl);
                       if (!fileUrl) return;
                       if (/^https?:\/\//i.test(fileUrl)) {
                         setStudentImagePreviewUrl(fileUrl);

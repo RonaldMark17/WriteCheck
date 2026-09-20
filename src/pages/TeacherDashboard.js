@@ -44,7 +44,7 @@ import {
   extractTextFromImage,
   getOcrEngineInfo,
 } from "./dashboard/ocrService";
-import { getBackendBaseUrl } from "../config/apiConfig";
+import { getBackendBaseUrl, normalizeFileUrl } from "../config/apiConfig";
 
 const uploadModes = [
   {
@@ -375,7 +375,7 @@ export default function TeacherDashboard({ profile }) {
           assignmentTitle: assignment?.title || "Assignment",
           classroomName: assignment?.classroomName || "Classroom",
           essayTitle: submission.essay_title || "Essay submission",
-          fileUrl: submission.file_url,
+          fileUrl: normalizeFileUrl(submission.file_url),
           status: gradeInfo.status || submission.status || "submitted",
           grade: gradeInfo.grade || submission.grade || "",
           feedback: gradeInfo.feedback || submission.feedback || "",
@@ -818,7 +818,7 @@ export default function TeacherDashboard({ profile }) {
     }
 
     // Load image preview
-    const fileUrl = submission.fileUrl;
+    const fileUrl = normalizeFileUrl(submission.fileUrl);
     if (!fileUrl) return;
     const isImageUrl = /\.(jpe?g|png|webp|gif)$/i.test(fileUrl) ||
       fileUrl.includes("/submissions/") ||

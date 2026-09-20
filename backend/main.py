@@ -37,20 +37,25 @@ DEFAULT_YOLO_MODEL_PATH = MODEL_DIR / "yolo" / "best.pt"
 LEGACY_YOLO_MODEL_PATH = BASE_DIR / "best.pt"
 DEFAULT_TROCR_MODEL_PATH = MODEL_DIR / "final_model"
 
+is_cuda = torch.cuda.is_available()
+
 # Configuration matching high-accuracy New folder (19) reference
+# Automatically tunes defaults based on whether running on CUDA GPU or EC2 CPU
 YOLO_CONF = float(os.getenv("YOLO_CONF", "0.25"))
 YOLO_IOU = float(os.getenv("YOLO_IOU", "0.40"))
-YOLO_IMGSZ = int(os.getenv("YOLO_IMGSZ", "1024"))
+YOLO_IMGSZ = int(os.getenv("YOLO_IMGSZ", "1024" if is_cuda else "800"))
 PAD_RATIO_VERT = float(os.getenv("PAD_RATIO_VERT", "0.08"))
 PAD_PX_HORIZ = int(os.getenv("PAD_PX_HORIZ", "6"))
 MAX_OCR_LINES = int(os.getenv("MAX_OCR_LINES", "0"))
-OCR_BATCH_SIZE = max(1, int(os.getenv("OCR_BATCH_SIZE", "8")))
-OCR_NUM_BEAMS = int(os.getenv("OCR_NUM_BEAMS", "4"))
+OCR_BATCH_SIZE = max(1, int(os.getenv("OCR_BATCH_SIZE", "8" if is_cuda else "4")))
+# CRITICAL: On CPU (e.g. AWS EC2), num_beams=4 is 4x slower than num_beams=1 with almost identical accuracy
+OCR_NUM_BEAMS = int(os.getenv("OCR_NUM_BEAMS", "4" if is_cuda else "1"))
 OCR_MAX_NEW_TOKENS = int(os.getenv("OCR_MAX_NEW_TOKENS", "64"))
 OCR_REPETITION_PENALTY = float(os.getenv("OCR_REPETITION_PENALTY", "1.2"))
 OCR_NO_REPEAT_NGRAM_SIZE = int(os.getenv("OCR_NO_REPEAT_NGRAM_SIZE", "3"))
 TORCH_THREADS = max(1, int(os.getenv("TORCH_THREADS", str(os.cpu_count() or 1))))
-TROCR_CPU_QUANTIZE = os.getenv("TROCR_CPU_QUANTIZE", "0") != "0"
+# Enable dynamic quantization by default on CPU for faster inference and lower RAM usage
+TROCR_CPU_QUANTIZE = os.getenv("TROCR_CPU_QUANTIZE", "0" if is_cuda else "1") != "0"
 TROCR_USE_CACHE = os.getenv("TROCR_USE_CACHE", "1") != "0"
 
 torch.set_num_threads(TORCH_THREADS)
@@ -408,11 +413,15 @@ if hasattr(trocr_model, "generation_config") and hasattr(trocr_model.generation_
 
 if device == "cpu" and TROCR_CPU_QUANTIZE:
     print("[ocr] applying CPU dynamic quantization to TrOCR", flush=True)
-    trocr_model = torch.ao.quantization.quantize_dynamic(
-        trocr_model,
-        {torch.nn.Linear},
-        dtype=torch.qint8,
-    )
+    try:
+        trocr_model = torch.ao.quantization.quantize_dynamic(
+            trocr_model,
+            {torch.nn.Linear},
+            dtype=torch.qint8,
+        )
+        print("[ocr] dynamic INT8 quantization applied successfully", flush=True)
+    except Exception as q_err:
+        print(f"[ocr] dynamic quantization skipped ({q_err}), continuing in float32", flush=True)
 
 configure_trocr_kv_cache(trocr_model, TROCR_USE_CACHE)
 

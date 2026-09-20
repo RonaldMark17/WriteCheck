@@ -26,3 +26,22 @@ export const getOcrStreamEndpoint = () => {
   }
   return `${getBackendBaseUrl()}/upload-stream`;
 };
+
+export const normalizeFileUrl = (url) => {
+  if (!url || typeof url !== "string") return url;
+
+  const backendBase = getBackendBaseUrl();
+  let normalized = url.replace(/^https?:\/\/(localhost|127\.0\.0\.1):8000/, backendBase);
+
+  // If page is loaded over HTTPS, upgrade any http: to https: for writecheck.duckdns.org
+  if (
+    typeof window !== "undefined" &&
+    window.location.protocol === "https:" &&
+    normalized.startsWith("http://writecheck.duckdns.org")
+  ) {
+    normalized = normalized.replace(/^http:/, "https:");
+  }
+
+  return normalized;
+};
+

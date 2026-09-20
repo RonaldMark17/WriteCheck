@@ -1,4 +1,5 @@
 import { supabase } from "../../supabaseClient";
+import { normalizeFileUrl } from "../../config/apiConfig";
 
 export const CLASSROOM_TABLE = "classroomTable";
 export const MEMBER_TABLE = "classroomMembers";
@@ -371,13 +372,14 @@ export function normalizeAssignment(row, classroomsById = new Map(), extra = {})
 }
 
 export async function openSubmissionFile(filePath, onError) {
-  if (!filePath) {
+  const normalizedPath = normalizeFileUrl(filePath);
+  if (!normalizedPath) {
     if (onError) onError("No file attached to this submission.");
     return;
   }
 
-  if (/^https?:\/\//i.test(filePath)) {
-    window.open(filePath, "_blank", "noopener,noreferrer");
+  if (/^https?:\/\//i.test(normalizedPath)) {
+    window.open(normalizedPath, "_blank", "noopener,noreferrer");
     return;
   }
 
