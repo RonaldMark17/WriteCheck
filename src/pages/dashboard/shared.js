@@ -166,6 +166,77 @@ export function ClipboardIcon({ className = "h-5 w-5" }) {
   );
 }
 
+export function SparklesIcon({ className = "h-5 w-5" }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z" />
+      <path d="M19 3v4" />
+      <path d="M21 5h-4" />
+    </svg>
+  );
+}
+
+export function CheckIcon({ className = "h-5 w-5" }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
+}
+
+export function CopyIcon({ className = "h-5 w-5" }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
+      <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+    </svg>
+  );
+}
+
+export function ChevronDownIcon({ className = "h-5 w-5" }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
 function LogOutIcon({ className = "h-5 w-5" }) {
   return (
     <svg
@@ -301,6 +372,7 @@ export function normalizeAssignment(row, classroomsById = new Map(), extra = {})
 
 export async function openSubmissionFile(filePath, onError) {
   if (!filePath) {
+    if (onError) onError("No file attached to this submission.");
     return;
   }
 
@@ -309,18 +381,27 @@ export async function openSubmissionFile(filePath, onError) {
     return;
   }
 
-  const { data, error } =
-    await supabase
-      .storage
-      .from(ESSAY_BUCKET)
-      .createSignedUrl(filePath, 60);
+  try {
+    const { data, error } =
+      await supabase
+        .storage
+        .from(ESSAY_BUCKET)
+        .createSignedUrl(filePath, 3600);
 
-  if (error) {
-    onError(error.message);
-    return;
+    if (error || !data?.signedUrl) {
+      const { data: pubData } = supabase.storage.from(ESSAY_BUCKET).getPublicUrl(filePath);
+      if (pubData?.publicUrl) {
+        window.open(pubData.publicUrl, "_blank", "noopener,noreferrer");
+        return;
+      }
+      if (onError) onError(error?.message || "Could not open file from storage.");
+      return;
+    }
+
+    window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+  } catch (err) {
+    if (onError) onError(err.message || "Failed to open submission file.");
   }
-
-  window.open(data.signedUrl, "_blank", "noopener,noreferrer");
 }
 
 export function StatusMessage({ error, message }) {

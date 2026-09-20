@@ -4,9 +4,12 @@ import { supabase } from "../supabaseClient";
 import {
   ASSIGNMENT_TABLE,
   CLASSROOM_TABLE,
+  CheckIcon,
   ClipboardIcon,
+  CopyIcon,
   ESSAY_BUCKET,
   FileIcon,
+  FileSearchIcon,
   MEMBER_TABLE,
   SUBMISSION_TABLE,
   Header,
@@ -118,6 +121,18 @@ export default function StudentDashboard({ profile }) {
 
   const [successMessage, setSuccessMessage] =
     useState("");
+
+  const [viewingSubmission, setViewingSubmission] =
+    useState(null);
+
+  const [studentImagePreviewUrl, setStudentImagePreviewUrl] =
+    useState("");
+
+  const [isStudentImageExpanded, setIsStudentImageExpanded] =
+    useState(false);
+
+  const [studentCopySuccess, setStudentCopySuccess] =
+    useState(false);
 
   const selectedAssignment =
     assignments.find((assignment) => assignment.id === submissionDraft.assignmentId) ??
@@ -281,10 +296,22 @@ export default function StudentDashboard({ profile }) {
     const assignmentsById =
       new Map(nextAssignments.map((assignment) => [assignment.id, assignment]));
 
+    let localGradesMap = {};
+    try {
+      const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+      const res = await fetch(`${backendUrl}/api/submissions/grades`);
+      if (res.ok) {
+        localGradesMap = await res.json();
+      }
+    } catch {
+      // Ignore network errors fetching grades
+    }
+
     const nextSubmissions =
       submissionRows.map((submission) => {
         const assignment =
           assignmentsById.get(submission.assignment_id);
+        const gradeInfo = localGradesMap[submission.id] || {};
 
         return {
           id: submission.id,
@@ -293,7 +320,11 @@ export default function StudentDashboard({ profile }) {
           classroomName: assignment?.classroomName || "Classroom",
           essayTitle: submission.essay_title || "Essay submission",
           fileUrl: submission.file_url,
-          status: submission.status || "submitted",
+          status: gradeInfo.status || submission.status || "submitted",
+          grade: gradeInfo.grade || submission.grade || "",
+          feedback: gradeInfo.feedback || submission.feedback || "",
+          transcribedText: gradeInfo.transcribed_text || "",
+          scanResult: gradeInfo.scan_result || null,
         };
       });
 
@@ -514,6 +545,9 @@ export default function StudentDashboard({ profile }) {
     const filePath =
       `${profile.id}/${selectedAssignment.id}/${Date.now()}-${safeFileName}`;
 
+    let uploadedFileUrl = filePath;
+    let isSupabaseStorage = false;
+
     try {
       const { error: uploadError } =
         await supabase
@@ -523,9 +557,40 @@ export default function StudentDashboard({ profile }) {
             contentType: uploadFile.type || "application/octet-stream",
           });
 
-      if (uploadError) {
-        setErrorMessage(uploadError.message);
-        return;
+      if (!uploadError) {
+        isSupabaseStorage = true;
+      } else {
+        console.warn("Supabase storage upload failed, falling back to local backend:", uploadError);
+        try {
+          const formData = new FormData();
+          formData.append("file", uploadFile);
+
+          const backendUrl = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+          const res = await fetch(`${backendUrl}/api/submissions/upload`, {
+            method: "POST",
+            body: formData,
+          });
+
+          if (!res.ok) {
+            throw new Error(`Fallback upload failed with status ${res.status}`);
+          }
+
+          const resData = await res.json();
+          uploadedFileUrl = resData.file_url;
+        } catch (fallbackError) {
+          console.error("Local fallback upload also failed:", fallbackError);
+          const isBucketMissing =
+            uploadError.message?.toLowerCase().includes("bucket not found") ||
+            uploadError.statusCode === "404" ||
+            uploadError.status === 400;
+
+          setErrorMessage(
+            isBucketMissing
+              ? `Supabase Storage bucket "${ESSAY_BUCKET}" was not found. Please create the "${ESSAY_BUCKET}" bucket in your Supabase project (Storage -> New bucket), or ensure your backend server is running on port 8000.`
+              : uploadError.message || "Failed to upload essay image."
+          );
+          return;
+        }
       }
 
       const { error: submissionError } =
@@ -536,15 +601,17 @@ export default function StudentDashboard({ profile }) {
             classroom_id: selectedAssignment.classroomId,
             student_id: profile.id,
             essay_title: essayTitle,
-            file_url: filePath,
+            file_url: uploadedFileUrl,
             status: "submitted",
           });
 
       if (submissionError) {
-        await supabase
-          .storage
-          .from(ESSAY_BUCKET)
-          .remove([filePath]);
+        if (isSupabaseStorage) {
+          await supabase
+            .storage
+            .from(ESSAY_BUCKET)
+            .remove([filePath]);
+        }
 
         if (submissionError.code === "23505") {
           setErrorMessage("You already submitted this assignment.");
@@ -797,7 +864,7 @@ export default function StudentDashboard({ profile }) {
                           type="button"
                           onClick={() =>
                             openSubmissionFile(
-                              assignment.submission?.file_url,
+                              assignment.submission?.file_url || assignment.submission?.fileUrl,
                               setErrorMessage
                             )
                           }
@@ -1008,11 +1075,12 @@ export default function StudentDashboard({ profile }) {
             </h2>
 
             <div className="mt-6 overflow-hidden rounded-lg border border-gray-200 bg-white">
-              <div className="grid grid-cols-[1fr_1fr_0.8fr_0.7fr] gap-4 border-b border-gray-200 px-5 py-3 text-xs font-extrabold uppercase tracking-normal text-gray-500">
+              <div className="grid grid-cols-[1fr_1fr_0.8fr_0.8fr_0.8fr] gap-4 border-b border-gray-200 px-5 py-3 text-xs font-extrabold uppercase tracking-normal text-gray-500">
                 <span>Assignment</span>
                 <span>Essay</span>
+                <span>Grade</span>
                 <span>Status</span>
-                <span>File</span>
+                <span>Action</span>
               </div>
 
               {submissions.length === 0 && (
@@ -1024,7 +1092,7 @@ export default function StudentDashboard({ profile }) {
               {submissions.map((submission) => (
                 <div
                   key={submission.id}
-                  className="grid grid-cols-[1fr_1fr_0.8fr_0.7fr] gap-4 border-b border-gray-100 px-5 py-4 text-sm last:border-b-0"
+                  className="grid grid-cols-[1fr_1fr_0.8fr_0.8fr_0.8fr] items-center gap-4 border-b border-gray-100 px-5 py-4 text-sm last:border-b-0"
                 >
                   <span className="font-extrabold text-gray-950">
                     {submission.assignmentTitle}
@@ -1032,18 +1100,330 @@ export default function StudentDashboard({ profile }) {
                   <span className="font-semibold text-gray-600">
                     {submission.essayTitle}
                   </span>
-                  <span className="font-extrabold text-emerald-700">
+                  <div>
+                    {submission.grade ? (
+                      <span className="inline-flex items-center rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-black text-emerald-800">
+                        {submission.grade}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center rounded-lg bg-gray-100 px-2.5 py-1 text-xs font-bold text-gray-400">
+                        Pending
+                      </span>
+                    )}
+                  </div>
+                  <span className={`font-extrabold capitalize ${
+                    submission.status === "graded" ? "text-emerald-700" :
+                    submission.status === "submitted" ? "text-blue-600" : "text-gray-500"
+                  }`}>
                     {submission.status}
                   </span>
                   <button
                     type="button"
-                    onClick={() => openSubmissionFile(submission.fileUrl, setErrorMessage)}
-                    className="w-fit rounded-lg border border-gray-200 px-3 py-2 text-sm font-extrabold text-gray-700 transition hover:bg-gray-50 hover:text-gray-950"
+                    onClick={() => {
+                      setViewingSubmission(submission);
+                      setStudentCopySuccess(false);
+                      setIsStudentImageExpanded(false);
+                      setStudentImagePreviewUrl("");
+                      const fileUrl = submission.fileUrl;
+                      if (!fileUrl) return;
+                      if (/^https?:\/\//i.test(fileUrl)) {
+                        setStudentImagePreviewUrl(fileUrl);
+                      } else {
+                        supabase.storage.from(ESSAY_BUCKET).createSignedUrl(fileUrl, 3600)
+                          .then(({ data, error }) => {
+                            if (!error && data?.signedUrl) {
+                              setStudentImagePreviewUrl(data.signedUrl);
+                            } else {
+                              const { data: pubData } = supabase.storage.from(ESSAY_BUCKET).getPublicUrl(fileUrl);
+                              if (pubData?.publicUrl) setStudentImagePreviewUrl(pubData.publicUrl);
+                            }
+                          });
+                      }
+                    }}
+                    className="inline-flex h-8 w-fit items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-xs font-extrabold text-gray-700 transition hover:bg-emerald-50 hover:text-emerald-800 hover:border-emerald-300"
                   >
-                    Open
+                    <FileSearchIcon className="h-3.5 w-3.5" />
+                    View
                   </button>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* Student Submission Detail Modal */}
+        {viewingSubmission && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/60 p-4 backdrop-blur-sm">
+            <div className="relative max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl">
+              {/* Header */}
+              <div className="flex items-start justify-between border-b border-gray-100 pb-4">
+                <div>
+                  <span className="inline-block rounded-md bg-emerald-100 px-2.5 py-0.5 text-xs font-black text-emerald-800 uppercase tracking-wider">
+                    My Submission
+                  </span>
+                  <h3 className="mt-1.5 text-2xl font-black text-gray-950">
+                    {viewingSubmission.essayTitle}
+                  </h3>
+                  <p className="mt-1 text-sm font-semibold text-gray-500">
+                    {viewingSubmission.assignmentTitle} • Submitted {formatDateTime(viewingSubmission.createdAt)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setViewingSubmission(null);
+                    setStudentImagePreviewUrl("");
+                    setIsStudentImageExpanded(false);
+                    setStudentCopySuccess(false);
+                  }}
+                  className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700 text-lg font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="mt-5 space-y-5">
+                {/* Submitted Image Preview */}
+                {studentImagePreviewUrl && (
+                  <div>
+                    <p className="mb-2 text-xs font-bold uppercase tracking-wider text-gray-400">Submitted image</p>
+                    <div
+                      className="group relative cursor-zoom-in overflow-hidden rounded-xl border border-gray-200 bg-gray-100 shadow-sm"
+                      onClick={() => setIsStudentImageExpanded(true)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => e.key === "Enter" && setIsStudentImageExpanded(true)}
+                      style={{ maxHeight: "280px" }}
+                    >
+                      <img
+                        src={studentImagePreviewUrl}
+                        alt="Your submission"
+                        className="w-full object-contain transition duration-200 group-hover:brightness-90"
+                        style={{ maxHeight: "280px" }}
+                        onError={(e) => e.target.closest(".group").style.display = "none"}
+                      />
+                      <div className="absolute bottom-2 right-2 flex items-center gap-1 rounded-md bg-black/50 px-2 py-1 text-[11px] font-bold text-white opacity-0 transition-opacity group-hover:opacity-100">
+                        <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
+                        Expand
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Lightbox */}
+                {isStudentImageExpanded && studentImagePreviewUrl && (
+                  <div
+                    className="fixed inset-0 z-[70] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm"
+                    onClick={() => setIsStudentImageExpanded(false)}
+                  >
+                    <div className="relative max-h-[95vh] max-w-[95vw]">
+                      <button
+                        type="button"
+                        onClick={() => setIsStudentImageExpanded(false)}
+                        className="absolute -right-3 -top-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-white font-bold text-gray-800 shadow-lg hover:bg-gray-100 text-sm"
+                      >✕</button>
+                      <img
+                        src={studentImagePreviewUrl}
+                        alt="Your submission full view"
+                        className="max-h-[92vh] max-w-[92vw] rounded-xl object-contain shadow-2xl"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                      <p className="mt-2 text-center text-xs font-semibold text-white/70">
+                        {viewingSubmission.essayTitle}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Grade & Status Banner */}
+                <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+                  <div className="flex flex-wrap items-center gap-4">
+                    <div className="flex-1">
+                      <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Grade</p>
+                      {viewingSubmission.grade ? (
+                        <p className="mt-1 text-3xl font-black text-emerald-700">{viewingSubmission.grade}</p>
+                      ) : (
+                        <p className="mt-1 text-lg font-extrabold text-gray-400">Not graded yet</p>
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-xs font-bold uppercase tracking-wider text-gray-500">Status</p>
+                      <p className={`mt-1 text-lg font-extrabold capitalize ${
+                        viewingSubmission.status === "graded" ? "text-emerald-700" :
+                        viewingSubmission.status === "submitted" ? "text-blue-600" : "text-gray-500"
+                      }`}>{viewingSubmission.status}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => openSubmissionFile(viewingSubmission.fileUrl, setErrorMessage)}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3.5 text-xs font-extrabold text-gray-700 hover:bg-gray-50 shadow-sm transition"
+                    >
+                      <FileSearchIcon className="h-4 w-4 text-gray-500" />
+                      Open file
+                    </button>
+                  </div>
+
+                  {/* Teacher Feedback */}
+                  {viewingSubmission.feedback && (
+                    <div className="mt-4 rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3">
+                      <p className="text-xs font-extrabold uppercase tracking-wider text-emerald-700">Teacher Feedback</p>
+                      <p className="mt-1 text-sm font-semibold text-emerald-900 leading-6">{viewingSubmission.feedback}</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Plagiarism Detection Result */}
+                {viewingSubmission.scanResult ? (() => {
+                  const sr = viewingSubmission.scanResult;
+                  const ringClass = sr.tone === "red"
+                    ? "text-red-700 ring-red-100"
+                    : sr.tone === "amber"
+                      ? "text-amber-700 ring-amber-100"
+                      : "text-emerald-700 ring-emerald-100";
+                  const badgeClass = sr.tone === "red"
+                    ? "bg-red-50 text-red-700 border-red-200"
+                    : sr.tone === "amber"
+                      ? "bg-amber-50 text-amber-700 border-amber-200"
+                      : "bg-emerald-50 text-emerald-800 border-emerald-200";
+                  return (
+                    <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <p className="text-xs font-black uppercase tracking-wider text-emerald-700">Detection Result</p>
+                          <h4 className="mt-1 text-xl font-black text-gray-950">Plagiarism check</h4>
+                        </div>
+                        <span className={`inline-flex items-center rounded-lg border px-3 py-1 text-xs font-black ${badgeClass}`}>
+                          {sr.label || "Low review"}
+                        </span>
+                      </div>
+
+                      {/* Transcribed text */}
+                      {viewingSubmission.transcribedText && (
+                        <div className="mt-5">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-extrabold text-gray-800">Transcribed handwriting</p>
+                              <span className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-extrabold text-emerald-800">YOLO26x + TrOCR</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  await navigator.clipboard.writeText(viewingSubmission.transcribedText);
+                                  setStudentCopySuccess(true);
+                                  setTimeout(() => setStudentCopySuccess(false), 2000);
+                                } catch {}
+                              }}
+                              className="inline-flex items-center gap-1.5 text-xs font-extrabold text-emerald-700 hover:text-emerald-900 transition"
+                            >
+                              {studentCopySuccess ? (
+                                <><CheckIcon className="h-3.5 w-3.5 text-emerald-600" /><span>Copied!</span></>
+                              ) : (
+                                <><CopyIcon className="h-3.5 w-3.5" /><span>Copy</span></>
+                              )}
+                            </button>
+                          </div>
+                          <pre className="mt-3 max-h-[200px] overflow-auto whitespace-pre-wrap rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-semibold leading-6 text-gray-800">
+                            {viewingSubmission.transcribedText}
+                          </pre>
+                        </div>
+                      )}
+
+                      {/* Score ring + stats */}
+                      <div className="mt-5 grid gap-4 sm:grid-cols-[140px_1fr]">
+                        <div className={`grid aspect-square place-items-center rounded-lg bg-white text-center ring-8 ${ringClass}`}>
+                          <div>
+                            <strong className="block text-4xl font-black">{sr.score}%</strong>
+                            <span className="mt-1 block text-xs font-extrabold uppercase tracking-normal text-gray-500">Plagiarism score</span>
+                          </div>
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <div className="rounded-lg bg-gray-50 p-3">
+                            <p className="text-2xl font-black text-gray-950">{sr.wordCount ?? 0}</p>
+                            <p className="mt-1 text-xs font-bold text-gray-500">Total words</p>
+                          </div>
+                          <div className="rounded-lg bg-gray-50 p-3">
+                            <p className="text-2xl font-black text-gray-950">{sr.identicalWords ?? 0}</p>
+                            <p className="mt-1 text-xs font-bold text-gray-500">Matched / identical words</p>
+                          </div>
+                          <div className="rounded-lg bg-gray-50 p-3">
+                            <p className="text-xl font-black text-emerald-800">{sr.scanStatus || "Completed"}</p>
+                            <p className="mt-1 text-xs font-bold text-gray-500">Scan status</p>
+                          </div>
+                          <div className="rounded-lg bg-gray-50 p-3">
+                            <p className="text-2xl font-black text-gray-950">{sr.matchedSources?.length ?? 0}</p>
+                            <p className="mt-1 text-xs font-bold text-gray-500">Matching sources</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Matched sources */}
+                      {sr.matchedSources && sr.matchedSources.length > 0 && (
+                        <div className="mt-5">
+                          <div className="flex items-center justify-between">
+                            <p className="text-sm font-extrabold text-gray-800">Matching sources ({sr.matchedSources.length})</p>
+                            <span className="rounded bg-emerald-100 px-2 py-0.5 text-[11px] font-extrabold text-emerald-800">Copyleaks API</span>
+                          </div>
+                          <div className="mt-3 space-y-2">
+                            {sr.matchedSources.map((source, idx) => (
+                              <div key={source.id || idx} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 rounded-lg border border-gray-200 bg-white p-3 text-sm">
+                                <div className="min-w-0 flex-1">
+                                  <p className="font-extrabold text-gray-900 truncate">{source.title || "Matched source"}</p>
+                                  {source.url && (
+                                    <a href={source.url} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-emerald-700 hover:underline truncate block mt-0.5">
+                                      {source.url}
+                                    </a>
+                                  )}
+                                </div>
+                                <span className="shrink-0 rounded bg-gray-100 px-2.5 py-1 text-xs font-bold text-gray-700">
+                                  {source.matched_words || source.identical_words || 0} matched words
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Review signals */}
+                      {sr.flags && sr.flags.length > 0 && (
+                        <div className="mt-5">
+                          <p className="text-sm font-extrabold text-gray-800">Review signals</p>
+                          <div className="mt-3 space-y-2">
+                            {sr.flags.map((flag, idx) => (
+                              <p key={idx} className="rounded-lg border border-gray-200 px-4 py-3 text-sm font-semibold text-gray-600">{flag}</p>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <p className="mt-5 text-xs font-semibold leading-6 text-gray-500">
+                        {sr.summary || "Scanned via Copyleaks Authenticity API."}
+                      </p>
+                    </div>
+                  );
+                })() : (
+                  <div className="rounded-xl border-2 border-dashed border-gray-200 bg-gray-50 p-5 text-center">
+                    <p className="text-xs font-black uppercase tracking-wider text-gray-400">Detection Result</p>
+                    <p className="mt-1 text-sm font-semibold text-gray-500">No plagiarism scan result yet. Your teacher will review your submission.</p>
+                  </div>
+                )}
+
+                {/* Close button */}
+                <div className="flex justify-end pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setViewingSubmission(null);
+                      setStudentImagePreviewUrl("");
+                      setIsStudentImageExpanded(false);
+                      setStudentCopySuccess(false);
+                    }}
+                    className="rounded-lg border border-gray-300 bg-white px-5 py-2.5 text-xs font-extrabold text-gray-700 transition hover:bg-gray-50"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}

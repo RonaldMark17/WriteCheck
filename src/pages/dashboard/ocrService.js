@@ -11,6 +11,8 @@ function buildOcrResult(data = {}) {
   return {
     text: data.text || "",
     lines: data.lines ?? [],
+    boxes: data.boxes ?? [],
+    rawBoxes: data.raw_boxes ?? data.rawBoxes ?? [],
     detectedLineCount: data.detected_line_count ?? data.detectedLineCount ?? data.lines?.length ?? 0,
     duplicateLineCount: data.duplicate_line_count ?? data.duplicateLineCount ?? 0,
     processedLineCount: data.processed_line_count ?? data.processedLineCount ?? data.lines?.length ?? 0,
@@ -139,6 +141,7 @@ async function extractTextFromImageStream(file, signal, onProgress) {
     if (event.type === "metadata") {
       latestResult = {
         ...latestResult,
+        rawBoxes: event.raw_boxes ?? [],
         detectedLineCount: event.detected_line_count ?? 0,
         duplicateLineCount: event.duplicate_line_count ?? 0,
         processedLineCount: event.processed_line_count ?? 0,
@@ -153,6 +156,8 @@ async function extractTextFromImageStream(file, signal, onProgress) {
         ...latestResult,
         text: event.text || "",
         lines: latestResult.lines.concat(event.lines ?? []),
+        boxes: latestResult.boxes.concat(event.boxes ?? []),
+        rawBoxes: event.raw_boxes ?? latestResult.rawBoxes,
         detectedLineCount: event.detected_line_count ?? latestResult.detectedLineCount,
         duplicateLineCount: event.duplicate_line_count ?? latestResult.duplicateLineCount,
         processedLineCount: event.processed_line_count ?? latestResult.processedLineCount,
@@ -222,3 +227,14 @@ export async function extractTextFromImage(file, options = {}) {
     window.clearTimeout(timeoutId);
   }
 }
+
+export async function getOcrEngineInfo() {
+  try {
+    const response = await fetch("http://localhost:8000/health");
+    if (!response.ok) return null;
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+

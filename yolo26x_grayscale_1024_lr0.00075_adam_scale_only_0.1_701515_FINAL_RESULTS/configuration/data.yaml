@@ -1,0 +1,13 @@
+train: train/images
+val: valid/images
+test: test/images
+nc: 1
+names:
+- text_lines
+roboflow:
+  workspace: mendozas-workspace-f9otl
+  project: handwritten_dataset-dofr7
+  version: 18
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/mendozas-workspace-f9otl/handwritten_dataset-dofr7/dataset/18
+path: /content/HANDWRITTEN_DATASET_GRAYSCALE_YOLO26

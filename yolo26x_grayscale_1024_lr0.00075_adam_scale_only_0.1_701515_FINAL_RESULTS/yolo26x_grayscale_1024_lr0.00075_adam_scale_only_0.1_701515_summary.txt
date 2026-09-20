@@ -1,0 +1,43 @@
+YOLO26 XLARGE GRAYSCALE SCALE-ONLY AUGMENTATION EXPERIMENT SUMMARY
+
+Experiment: yolo26x_grayscale_1024_lr0.00075_adam_scale_only_0.1_701515
+Model: yolo26x.pt
+Dataset: Grayscale
+Split: 70/15/15
+Image Size: 1024
+Maximum Epochs: 150
+Batch Size: 4
+Optimizer: Adam
+Learning Rate: 0.00075
+Patience: 30
+Seed: 42
+
+Augmentation: Scale Only
+Degrees: 0.0
+Translate: 0.0
+Scale: 0.1
+Shear: 0.0
+Perspective: 0.0
+Flip Up-Down: 0.0
+Flip Left-Right: 0.0
+Mosaic: 0.0
+MixUp: 0.0
+CutMix: 0.0
+HSV Hue: 0.0
+HSV Saturation: 0.0
+HSV Value: 0.0
+
+Validation Precision: 0.937886
+Validation Recall: 0.995181
+Validation F1: 0.965684
+Validation mAP50: 0.973057
+Validation mAP50-95: 0.621411
+
+Test Precision: 0.969867
+Test Recall: 0.989318
+Test F1: 0.979496
+Test mAP50: 0.991934
+Test mAP50-95: 0.626600
+
+Training Time Seconds: 4570.03
+Training Time Minutes: 76.17

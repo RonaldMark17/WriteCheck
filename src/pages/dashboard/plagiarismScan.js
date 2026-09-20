@@ -318,3 +318,118 @@ export function analyzePlagiarismInput({ text = "", files = [] } = {}) {
     repeatedPhrases,
   };
 }
+
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:8000";
+
+/**
+ * Initiates a plagiarism scan with the backend (Copyleaks service).
+ */
+export async function checkPlagiarismViaBackend({
+  text = "",
+  file = null,
+  filename = "",
+  userId = "anonymous",
+  sandbox = null,
+} = {}) {
+  let response;
+
+  if (file) {
+    const formData = new FormData();
+    formData.append("file", file);
+    if (text) formData.append("text", text);
+    if (filename || file.name) formData.append("filename", filename || file.name);
+    formData.append("user_id", userId);
+    if (sandbox !== null) formData.append("sandbox", String(sandbox));
+
+    response = await fetch(`${BACKEND_URL}/api/plagiarism/check`, {
+      method: "POST",
+      body: formData,
+    });
+  } else {
+    response = await fetch(`${BACKEND_URL}/api/plagiarism/check`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        text,
+        filename: filename || "essay.txt",
+        user_id: userId,
+        sandbox,
+      }),
+    });
+  }
+
+  if (!response.ok) {
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(
+      errData.detail || "Unable to complete the plagiarism check. Please try again later."
+    );
+  }
+
+  return response.json();
+}
+
+/**
+ * Polls the backend scan status until completed, failed, or timed out.
+ */
+export async function pollPlagiarismScanResult(
+  scanId,
+  { onProgress, maxAttempts = 30, intervalMs = 2500 } = {}
+) {
+  if (!scanId) {
+    throw new Error("scanId is required to poll scan results.");
+  }
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/plagiarism/scans/${scanId}`);
+      if (response.ok) {
+        const scan = await response.json();
+        if (onProgress) {
+          onProgress(scan, attempt);
+        }
+
+        if (scan.status === "completed") {
+          return scan;
+        }
+
+        if (scan.status === "failed") {
+          const errMsg =
+            scan.result_data?.error || "Plagiarism scan could not be completed.";
+          throw new Error(errMsg);
+        }
+      }
+    } catch (err) {
+      if (err.message && !err.message.includes("fetch")) {
+        throw err;
+      }
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+
+  // If still processing after timeout, try one last check
+  const finalRes = await fetch(`${BACKEND_URL}/api/plagiarism/scans/${scanId}`);
+  if (finalRes.ok) {
+    return finalRes.json();
+  }
+
+  throw new Error("Plagiarism scan timed out. Please check back shortly.");
+}
+
+/**
+ * Fetches recent plagiarism scans for a user.
+ */
+export async function fetchUserPlagiarismScans(userId = "anonymous", limit = 10) {
+  try {
+    const res = await fetch(
+      `${BACKEND_URL}/api/plagiarism/scans?user_id=${encodeURIComponent(userId)}&limit=${limit}`
+    );
+    if (!res.ok) return [];
+    return res.json();
+  } catch {
+    return [];
+  }
+}
+

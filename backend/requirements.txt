@@ -9,3 +9,4 @@ torch
 safetensors
 tiktoken
 protobuf
+requests
